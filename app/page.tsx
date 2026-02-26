@@ -6,7 +6,7 @@ import { useState, useEffect, useCallback } from 'react'
 // ============================================================
 type Step = 1 | 2 | 3 | 4
 type GuideCategory = 'academic' | 'club' | 'parttime' | 'volunteer' | 'daily'
-type ESMode = 'create' | 'review'
+type ESItemType = 'self_pr' | 'motivation' | 'gakuchika' | 'custom'
 type InterviewStage = 'first' | 'second' | 'final' | 'group'
 type ESReviewMode = 'structure' | 'specificity' | 'company_fit' | 'differentiation' | 'char_optimization'
 
@@ -24,16 +24,19 @@ interface ResearchData {
   companyResult: any | null
 }
 
-interface ESData {
-  question: string
+interface ESItem {
+  id: string
+  type: ESItemType
+  title: string
   charLimit: number
   targetCompany: string
   selectedGakuchika: number
-  generatedES: string
+  createResult: any | null
   reviewText: string
   reviewMode: ESReviewMode
-  createResult: any | null
   reviewResult: any | null
+  expanded: boolean
+  mode: 'create' | 'review'
 }
 
 interface InterviewData {
@@ -59,7 +62,13 @@ const GUIDE_QUESTIONS: Record<GuideCategory, { label: string; question: string; 
 
 const INDUSTRIES = ['メーカー', 'IT・通信', '金融', '商社', 'コンサル', '広告・メディア', '不動産', '小売・流通', '食品', '人材', '公務員', 'その他']
 const CAREER_AXES = ['成長環境', '安定性', '社会貢献', 'グローバル', '裁量権', 'ワークライフバランス', '専門性', 'チームワーク']
-const CHAR_LIMITS = [200, 300, 400, 500, 0]
+const CHAR_LIMITS = [200, 300, 400, 500, 600, 800, 0]
+
+const ES_PRESETS: Record<Exclude<ESItemType, 'custom'>, { label: string; icon: string; question: string }> = {
+  self_pr: { label: '自己PR', icon: '💪', question: 'あなたの自己PRを教えてください。' },
+  motivation: { label: '志望動機', icon: '🎯', question: '志望動機を教えてください。' },
+  gakuchika: { label: 'ガクチカ', icon: '🔥', question: '学生時代に力を入れたことを教えてください。' },
+}
 
 const STAGE_CONFIG: Record<InterviewStage, { label: string; icon: string; desc: string; questionDefault: number; color: string }> = {
   first: { label: '一次面接', icon: '👤', desc: '人事担当者による足切り面接', questionDefault: 7, color: 'bg-blue-500' },
@@ -97,12 +106,9 @@ export default function Home() {
   })
 
   // STEP 3 State
-  const [esData, setEsData] = useState<ESData>({
-    question: '', charLimit: 400, targetCompany: '', selectedGakuchika: 0,
-    generatedES: '', reviewText: '', reviewMode: 'structure',
-    createResult: null, reviewResult: null
-  })
-  const [esMode, setEsMode] = useState<ESMode>('create')
+  const [esItems, setEsItems] = useState<ESItem[]>([])
+  const [showAddCustom, setShowAddCustom] = useState(false)
+  const [customTitle, setCustomTitle] = useState('')
 
   // STEP 4 State
   const [interview, setInterview] = useState<InterviewData>({
@@ -119,7 +125,7 @@ export default function Home() {
         const data = JSON.parse(saved)
         if (data.selfAnalysis) setSelfAnalysis(data.selfAnalysis)
         if (data.research) setResearch(data.research)
-        if (data.esData) setEsData(data.esData)
+        if (data.esItems) setEsItems(data.esItems)
         if (data.isPaid) setIsPaid(data.isPaid)
       }
     } catch {}
@@ -128,9 +134,9 @@ export default function Home() {
   // Save to localStorage
   const saveData = useCallback(() => {
     try {
-      localStorage.setItem('icf_data', JSON.stringify({ selfAnalysis, research, esData, isPaid }))
+      localStorage.setItem('icf_data', JSON.stringify({ selfAnalysis, research, esItems, isPaid }))
     } catch {}
-  }, [selfAnalysis, research, esData, isPaid])
+  }, [selfAnalysis, research, esItems, isPaid])
 
   useEffect(() => { saveData() }, [saveData])
 
@@ -205,26 +211,59 @@ export default function Home() {
     if (result) setResearch(prev => ({ ...prev, companyResult: result }))
   }
 
-  async function runESGenerate() {
-    const result = await callAPI('/api/es-generate', {
-      question: esData.question,
-      charLimit: esData.charLimit,
-      targetCompany: esData.targetCompany || research.companyName,
-      selfAnalysisData: selfAnalysis.result,
-      companyData: research.companyResult,
-      selectedGakuchika: esData.selectedGakuchika,
-    }, 'ES作成中...')
-    if (result) setEsData(prev => ({ ...prev, createResult: result }))
+  // ES Item helpers
+  function addESItem(type: ESItemType, title?: string) {
+    const preset = type !== 'custom' ? ES_PRESETS[type] : null
+    const newItem: ESItem = {
+      id: `es_${Date.now()}`,
+      type,
+      title: title || preset?.label || '',
+      charLimit: 400,
+      targetCompany: research.companyName || '',
+      selectedGakuchika: 0,
+      createResult: null,
+      reviewText: '',
+      reviewMode: 'structure',
+      reviewResult: null,
+      expanded: true,
+      mode: 'create',
+    }
+    setEsItems(prev => [...prev, newItem])
+    setShowAddCustom(false)
+    setCustomTitle('')
   }
 
-  async function runESReview() {
-    const result = await callAPI('/api/es-review', {
-      esText: esData.reviewText,
-      reviewMode: esData.reviewMode,
-      targetCompany: esData.targetCompany || research.companyName,
+  function updateESItem(id: string, updates: Partial<ESItem>) {
+    setEsItems(prev => prev.map(item => item.id === id ? { ...item, ...updates } : item))
+  }
+
+  function removeESItem(id: string) {
+    setEsItems(prev => prev.filter(item => item.id !== id))
+  }
+
+  async function runESGenerateForItem(item: ESItem) {
+    const question = item.type !== 'custom'
+      ? ES_PRESETS[item.type].question
+      : `${item.title}について記述してください。`
+    const result = await callAPI('/api/es-generate', {
+      question,
+      charLimit: item.charLimit,
+      targetCompany: item.targetCompany || research.companyName,
+      selfAnalysisData: selfAnalysis.result,
       companyData: research.companyResult,
-    }, 'ES添削中...')
-    if (result) setEsData(prev => ({ ...prev, reviewResult: result }))
+      selectedGakuchika: item.selectedGakuchika,
+    }, `${item.title} 作成中...`)
+    if (result) updateESItem(item.id, { createResult: result })
+  }
+
+  async function runESReviewForItem(item: ESItem) {
+    const result = await callAPI('/api/es-review', {
+      esText: item.reviewText,
+      reviewMode: item.reviewMode,
+      targetCompany: item.targetCompany || research.companyName,
+      companyData: research.companyResult,
+    }, `${item.title} 添削中...`)
+    if (result) updateESItem(item.id, { reviewResult: result })
   }
 
   async function runQuestionGenerate() {
@@ -256,7 +295,7 @@ export default function Home() {
   const stepCompleted = (s: Step) => {
     if (s === 1) return !!selfAnalysis.result
     if (s === 2) return !!(research.industryResult || research.companyResult)
-    if (s === 3) return !!(esData.createResult || esData.reviewResult)
+    if (s === 3) return esItems.some(item => item.createResult || item.reviewResult)
     return !!interview.questions
   }
 
@@ -575,193 +614,278 @@ export default function Home() {
               <>
                 <div>
                   <h2 className="text-xl font-bold text-gray-800">STEP 3: ES作成・添削</h2>
-                  <p className="text-sm text-gray-500 mt-1">AIがSTAR法に基づいてESを作成・添削します</p>
+                  <p className="text-sm text-gray-500 mt-1">設問ごとにAIがES下書き作成・添削を行います</p>
                 </div>
 
-                <div className="flex gap-2">
-                  <button onClick={() => setEsMode('create')} className={`px-4 py-2 rounded-lg text-sm font-medium transition ${esMode === 'create' ? 'bg-brand-500 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
-                    ✍️ ES作成
-                  </button>
-                  <button onClick={() => setEsMode('review')} className={`px-4 py-2 rounded-lg text-sm font-medium transition ${esMode === 'review' ? 'bg-brand-500 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
-                    📝 ES添削
-                  </button>
-                </div>
-
-                {esMode === 'create' ? (
-                  <div className="space-y-4">
-                    <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-4">
-                      <div>
-                        <label className="text-sm font-bold text-gray-700">設問文</label>
-                        <textarea
-                          value={esData.question}
-                          onChange={e => setEsData(prev => ({ ...prev, question: e.target.value }))}
-                          placeholder="例: 学生時代に力を入れたことを教えてください"
-                          className="w-full mt-1 border border-gray-200 rounded-lg p-3 text-sm resize-none focus:ring-2 focus:ring-brand-300"
-                          rows={2}
-                        />
-                      </div>
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <label className="text-sm font-bold text-gray-700">文字数制限</label>
-                          <select
-                            value={esData.charLimit}
-                            onChange={e => setEsData(prev => ({ ...prev, charLimit: Number(e.target.value) }))}
-                            className="w-full mt-1 border border-gray-200 rounded-lg p-2.5 text-sm"
-                          >
-                            {CHAR_LIMITS.map(l => (
-                              <option key={l} value={l}>{l === 0 ? '制限なし' : `${l}字`}</option>
-                            ))}
-                          </select>
-                        </div>
-                        <div>
-                          <label className="text-sm font-bold text-gray-700">志望企業</label>
-                          <input
-                            type="text"
-                            value={esData.targetCompany || research.companyName}
-                            onChange={e => setEsData(prev => ({ ...prev, targetCompany: e.target.value }))}
-                            className="w-full mt-1 border border-gray-200 rounded-lg p-2.5 text-sm"
-                            placeholder="任意"
-                          />
-                        </div>
-                      </div>
-                      {selfAnalysis.result?.gakuchikaCandiates && (
-                        <div>
-                          <label className="text-sm font-bold text-gray-700">使うガクチカ候補</label>
-                          <div className="flex flex-wrap gap-2 mt-1">
-                            {selfAnalysis.result.gakuchikaCandiates.map((g: any, i: number) => (
-                              <button
-                                key={i}
-                                onClick={() => setEsData(prev => ({ ...prev, selectedGakuchika: i }))}
-                                className={`px-3 py-1.5 rounded-lg text-sm transition ${esData.selectedGakuchika === i ? 'bg-brand-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
-                              >
-                                {g.title}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-
+                {/* Add ES Item Buttons */}
+                <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-4">
+                  <h3 className="text-sm font-bold text-gray-700">設問を追加</h3>
+                  <div className="flex flex-wrap gap-2">
+                    {(Object.entries(ES_PRESETS) as [Exclude<ESItemType, 'custom'>, typeof ES_PRESETS[Exclude<ESItemType, 'custom'>]][]).map(([key, preset]) => (
+                      <button
+                        key={key}
+                        onClick={() => addESItem(key)}
+                        className="px-4 py-2.5 bg-brand-50 border border-brand-200 text-brand-700 rounded-lg text-sm font-medium hover:bg-brand-100 transition flex items-center gap-1.5"
+                      >
+                        {preset.icon} {preset.label}を追加
+                      </button>
+                    ))}
                     <button
-                      onClick={runESGenerate}
-                      disabled={isLoading || !esData.question.trim()}
-                      className="w-full py-3 bg-brand-500 text-white font-medium rounded-xl hover:bg-brand-600 transition disabled:opacity-40"
+                      onClick={() => setShowAddCustom(!showAddCustom)}
+                      className="px-4 py-2.5 bg-gray-50 border border-gray-200 text-gray-600 rounded-lg text-sm font-medium hover:bg-gray-100 transition"
                     >
-                      ✨ ES下書きを生成
+                      ＋ その他
                     </button>
-
-                    {esData.createResult && (
-                      <div className="animate-fadeIn bg-white rounded-xl border border-gray-200 p-5 space-y-3">
-                        <div className="flex items-center justify-between">
-                          <h3 className="font-bold text-gray-800">生成されたES</h3>
-                          {esData.createResult.charCount && (
-                            <span className="text-xs text-gray-500">{esData.createResult.charCount}字</span>
-                          )}
-                        </div>
-                        <div className="bg-gray-50 rounded-lg p-4">
-                          <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">{esData.createResult.es}</p>
-                        </div>
-                        {esData.createResult.explanation && (
-                          <div className="bg-brand-50 rounded-lg p-4">
-                            <h4 className="text-sm font-bold text-brand-700 mb-1">💡 この構成にした理由</h4>
-                            <p className="text-sm text-gray-700">{esData.createResult.explanation}</p>
-                          </div>
-                        )}
-                      </div>
-                    )}
                   </div>
-                ) : (
-                  <div className="space-y-4">
-                    <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-4">
-                      <div>
-                        <label className="text-sm font-bold text-gray-700">添削するES</label>
-                        <textarea
-                          value={esData.reviewText}
-                          onChange={e => setEsData(prev => ({ ...prev, reviewText: e.target.value }))}
-                          placeholder="書いたESを貼り付けてください"
-                          className="w-full mt-1 border border-gray-200 rounded-lg p-3 text-sm resize-none focus:ring-2 focus:ring-brand-300"
-                          rows={8}
+                  {showAddCustom && (
+                    <div className="flex gap-2 items-end">
+                      <div className="flex-1">
+                        <label className="text-xs text-gray-500">設問タイトル</label>
+                        <input
+                          type="text"
+                          value={customTitle}
+                          onChange={e => setCustomTitle(e.target.value)}
+                          placeholder="例: 挫折経験、趣味・特技、研究テーマ"
+                          className="w-full mt-1 border border-gray-200 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-brand-300"
                         />
-                        {esData.reviewText && <p className="text-xs text-gray-400 text-right mt-1">{esData.reviewText.length}字</p>}
                       </div>
-                      <div>
-                        <label className="text-sm font-bold text-gray-700 mb-2 block">添削の重点ポイント</label>
-                        <div className="flex flex-wrap gap-2">
-                          {(Object.entries(ES_REVIEW_MODES) as [ESReviewMode, { label: string; desc: string }][]).map(([key, mode]) => (
-                            <button
-                              key={key}
-                              onClick={() => setEsData(prev => ({ ...prev, reviewMode: key }))}
-                              className={`px-3 py-1.5 rounded-lg text-sm transition ${esData.reviewMode === key ? 'bg-brand-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
-                              title={mode.desc}
-                            >
-                              {mode.label}
-                            </button>
-                          ))}
-                        </div>
+                      <button
+                        onClick={() => customTitle.trim() && addESItem('custom', customTitle.trim())}
+                        disabled={!customTitle.trim()}
+                        className="px-4 py-2.5 bg-brand-500 text-white rounded-lg text-sm font-medium hover:bg-brand-600 transition disabled:opacity-40"
+                      >
+                        追加
+                      </button>
+                    </div>
+                  )}
+                  {esItems.length === 0 && (
+                    <p className="text-xs text-gray-400 text-center py-2">上のボタンから設問を追加してください</p>
+                  )}
+                </div>
+
+                {/* ES Item Cards */}
+                {esItems.map((item) => (
+                  <div key={item.id} className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                    {/* Card Header */}
+                    <div
+                      className="flex items-center justify-between p-4 cursor-pointer hover:bg-gray-50 transition"
+                      onClick={() => updateESItem(item.id, { expanded: !item.expanded })}
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="text-lg">
+                          {item.type !== 'custom' ? ES_PRESETS[item.type].icon : '📄'}
+                        </span>
+                        <span className="font-bold text-gray-800">{item.title}</span>
+                        <span className="text-xs text-gray-400">{item.charLimit === 0 ? '制限なし' : `${item.charLimit}字`}</span>
+                        {item.createResult && <span className="text-xs bg-accent-100 text-accent-700 px-2 py-0.5 rounded-full">生成済み</span>}
+                        {item.reviewResult && <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">添削済み</span>}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={e => { e.stopPropagation(); removeESItem(item.id) }}
+                          className="text-gray-400 hover:text-red-500 transition text-sm px-1"
+                          title="削除"
+                        >✕</button>
+                        <span className="text-gray-400 text-sm">{item.expanded ? '▲' : '▼'}</span>
                       </div>
                     </div>
 
-                    <button
-                      onClick={runESReview}
-                      disabled={isLoading || !esData.reviewText.trim()}
-                      className="w-full py-3 bg-brand-500 text-white font-medium rounded-xl hover:bg-brand-600 transition disabled:opacity-40"
-                    >
-                      📝 添削を実行
-                    </button>
-
-                    {esData.reviewResult && (
-                      <div className="animate-fadeIn space-y-4">
-                        <div className="bg-white rounded-xl border border-gray-200 p-5">
-                          <h3 className="font-bold text-gray-800 mb-3">添削結果</h3>
-                          {esData.reviewResult.overallScore && (
-                            <div className="flex items-center gap-3 mb-4">
-                              <div className={`w-14 h-14 rounded-full flex items-center justify-center text-xl font-bold text-white ${
-                                esData.reviewResult.overallScore >= 4 ? 'bg-accent-500' : esData.reviewResult.overallScore >= 3 ? 'bg-yellow-500' : 'bg-orange-500'
-                              }`}>{esData.reviewResult.overallScore}/5</div>
-                              <div>
-                                <p className="text-sm font-bold text-gray-700">{esData.reviewResult.overallComment}</p>
-                                {esData.reviewResult.passGrade && (
-                                  <span className={`text-xs px-2 py-0.5 rounded-full ${
-                                    esData.reviewResult.passGrade === 'A' ? 'bg-accent-100 text-accent-700' :
-                                    esData.reviewResult.passGrade === 'B' ? 'bg-blue-100 text-blue-700' :
-                                    'bg-orange-100 text-orange-700'
-                                  }`}>ES通過可能性: {esData.reviewResult.passGrade}</span>
-                                )}
-                              </div>
+                    {/* Card Body */}
+                    {item.expanded && (
+                      <div className="border-t border-gray-100 p-5 space-y-4">
+                        {/* Settings Row */}
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                          <div>
+                            <label className="text-xs font-bold text-gray-600">文字数制限</label>
+                            <select
+                              value={item.charLimit}
+                              onChange={e => updateESItem(item.id, { charLimit: Number(e.target.value) })}
+                              className="w-full mt-1 border border-gray-200 rounded-lg p-2 text-sm"
+                            >
+                              {CHAR_LIMITS.map(l => (
+                                <option key={l} value={l}>{l === 0 ? '制限なし' : `${l}字`}</option>
+                              ))}
+                            </select>
+                          </div>
+                          <div>
+                            <label className="text-xs font-bold text-gray-600">志望企業</label>
+                            <input
+                              type="text"
+                              value={item.targetCompany}
+                              onChange={e => updateESItem(item.id, { targetCompany: e.target.value })}
+                              className="w-full mt-1 border border-gray-200 rounded-lg p-2 text-sm"
+                              placeholder={research.companyName || '任意'}
+                            />
+                          </div>
+                          {item.type === 'custom' && (
+                            <div>
+                              <label className="text-xs font-bold text-gray-600">タイトル変更</label>
+                              <input
+                                type="text"
+                                value={item.title}
+                                onChange={e => updateESItem(item.id, { title: e.target.value })}
+                                className="w-full mt-1 border border-gray-200 rounded-lg p-2 text-sm"
+                              />
                             </div>
                           )}
-                          {esData.reviewResult.scores && (
-                            <div className="space-y-2 mb-4">
-                              {Object.entries(esData.reviewResult.scores).map(([key, score]: [string, any]) => (
-                                <div key={key} className="flex items-center gap-2">
-                                  <span className="text-xs text-gray-500 w-20">{ES_REVIEW_MODES[key as ESReviewMode]?.label || key}</span>
-                                  <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
-                                    <div className="h-full bg-brand-400 rounded-full transition-all" style={{ width: `${(Number(score) / 5) * 100}%` }} />
-                                  </div>
-                                  <span className="text-xs font-bold text-gray-600">{String(score)}/5</span>
-                                </div>
+                        </div>
+
+                        {/* Gakuchika Selection (for gakuchika type) */}
+                        {item.type === 'gakuchika' && selfAnalysis.result?.gakuchikaCandiates && (
+                          <div>
+                            <label className="text-xs font-bold text-gray-600">使うガクチカ候補</label>
+                            <div className="flex flex-wrap gap-2 mt-1">
+                              {selfAnalysis.result.gakuchikaCandiates.map((g: any, i: number) => (
+                                <button
+                                  key={i}
+                                  onClick={() => updateESItem(item.id, { selectedGakuchika: i })}
+                                  className={`px-3 py-1.5 rounded-lg text-xs transition ${item.selectedGakuchika === i ? 'bg-brand-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+                                >
+                                  {g.title}
+                                </button>
                               ))}
                             </div>
-                          )}
-                        </div>
-                        {esData.reviewResult.improved && (
-                          <div className="bg-white rounded-xl border border-gray-200 p-5">
-                            <h4 className="font-bold text-accent-700 mb-2">✨ 改善後のES</h4>
-                            <div className="bg-accent-50 rounded-lg p-4">
-                              <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">{esData.reviewResult.improved}</p>
-                            </div>
                           </div>
                         )}
-                        {esData.reviewResult.advice && (
-                          <div className="bg-brand-50 rounded-xl border border-brand-200 p-5">
-                            <h4 className="font-bold text-brand-700 mb-2">💡 改善アドバイス</h4>
-                            <p className="text-sm text-gray-700 whitespace-pre-wrap">{esData.reviewResult.advice}</p>
+
+                        {/* Mode Tabs */}
+                        <div className="flex gap-2 border-b border-gray-100 pb-2">
+                          <button
+                            onClick={() => updateESItem(item.id, { mode: 'create' })}
+                            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${item.mode === 'create' ? 'bg-brand-500 text-white' : 'text-gray-500 hover:bg-gray-100'}`}
+                          >
+                            ✍️ AI作成
+                          </button>
+                          <button
+                            onClick={() => updateESItem(item.id, { mode: 'review' })}
+                            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${item.mode === 'review' ? 'bg-brand-500 text-white' : 'text-gray-500 hover:bg-gray-100'}`}
+                          >
+                            📝 添削
+                          </button>
+                        </div>
+
+                        {/* Create Mode */}
+                        {item.mode === 'create' && (
+                          <div className="space-y-3">
+                            <button
+                              onClick={() => runESGenerateForItem(item)}
+                              disabled={isLoading}
+                              className="w-full py-2.5 bg-brand-500 text-white font-medium rounded-xl hover:bg-brand-600 transition disabled:opacity-40 text-sm"
+                            >
+                              ✨ {item.title}の下書きを生成
+                            </button>
+                            {item.createResult && (
+                              <div className="animate-fadeIn space-y-3">
+                                <div className="bg-gray-50 rounded-lg p-4">
+                                  <div className="flex items-center justify-between mb-2">
+                                    <h4 className="text-sm font-bold text-gray-700">生成されたES</h4>
+                                    {item.createResult.charCount && (
+                                      <span className="text-xs text-gray-500">{item.createResult.charCount}字</span>
+                                    )}
+                                  </div>
+                                  <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">{item.createResult.es}</p>
+                                </div>
+                                {item.createResult.explanation && (
+                                  <div className="bg-brand-50 rounded-lg p-4">
+                                    <h4 className="text-xs font-bold text-brand-700 mb-1">💡 この構成にした理由</h4>
+                                    <p className="text-sm text-gray-700">{item.createResult.explanation}</p>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Review Mode */}
+                        {item.mode === 'review' && (
+                          <div className="space-y-3">
+                            <div>
+                              <textarea
+                                value={item.reviewText}
+                                onChange={e => updateESItem(item.id, { reviewText: e.target.value })}
+                                placeholder="書いたESを貼り付けてください"
+                                className="w-full border border-gray-200 rounded-lg p-3 text-sm resize-none focus:ring-2 focus:ring-brand-300"
+                                rows={6}
+                              />
+                              {item.reviewText && <p className="text-xs text-gray-400 text-right mt-1">{item.reviewText.length}字</p>}
+                            </div>
+                            <div>
+                              <label className="text-xs font-bold text-gray-600 mb-1 block">添削の重点</label>
+                              <div className="flex flex-wrap gap-1.5">
+                                {(Object.entries(ES_REVIEW_MODES) as [ESReviewMode, { label: string; desc: string }][]).map(([key, mode]) => (
+                                  <button
+                                    key={key}
+                                    onClick={() => updateESItem(item.id, { reviewMode: key })}
+                                    className={`px-2.5 py-1 rounded-lg text-xs transition ${item.reviewMode === key ? 'bg-brand-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+                                    title={mode.desc}
+                                  >
+                                    {mode.label}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                            <button
+                              onClick={() => runESReviewForItem(item)}
+                              disabled={isLoading || !item.reviewText.trim()}
+                              className="w-full py-2.5 bg-brand-500 text-white font-medium rounded-xl hover:bg-brand-600 transition disabled:opacity-40 text-sm"
+                            >
+                              📝 添削を実行
+                            </button>
+                            {item.reviewResult && (
+                              <div className="animate-fadeIn space-y-3">
+                                <div className="bg-gray-50 rounded-lg p-4">
+                                  <h4 className="text-sm font-bold text-gray-700 mb-3">添削結果</h4>
+                                  {item.reviewResult.overallScore && (
+                                    <div className="flex items-center gap-3 mb-3">
+                                      <div className={`w-12 h-12 rounded-full flex items-center justify-center text-lg font-bold text-white ${
+                                        item.reviewResult.overallScore >= 4 ? 'bg-accent-500' : item.reviewResult.overallScore >= 3 ? 'bg-yellow-500' : 'bg-orange-500'
+                                      }`}>{item.reviewResult.overallScore}/5</div>
+                                      <div>
+                                        <p className="text-sm font-bold text-gray-700">{item.reviewResult.overallComment}</p>
+                                        {item.reviewResult.passGrade && (
+                                          <span className={`text-xs px-2 py-0.5 rounded-full ${
+                                            item.reviewResult.passGrade === 'A' ? 'bg-accent-100 text-accent-700' :
+                                            item.reviewResult.passGrade === 'B' ? 'bg-blue-100 text-blue-700' :
+                                            'bg-orange-100 text-orange-700'
+                                          }`}>ES通過可能性: {item.reviewResult.passGrade}</span>
+                                        )}
+                                      </div>
+                                    </div>
+                                  )}
+                                  {item.reviewResult.scores && (
+                                    <div className="space-y-1.5">
+                                      {Object.entries(item.reviewResult.scores).map(([key, score]: [string, any]) => (
+                                        <div key={key} className="flex items-center gap-2">
+                                          <span className="text-xs text-gray-500 w-20">{ES_REVIEW_MODES[key as ESReviewMode]?.label || key}</span>
+                                          <div className="flex-1 h-2 bg-gray-200 rounded-full overflow-hidden">
+                                            <div className="h-full bg-brand-400 rounded-full transition-all" style={{ width: `${(Number(score) / 5) * 100}%` }} />
+                                          </div>
+                                          <span className="text-xs font-bold text-gray-600">{String(score)}/5</span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                                {item.reviewResult.improved && (
+                                  <div className="bg-accent-50 rounded-lg p-4">
+                                    <h4 className="text-xs font-bold text-accent-700 mb-1">✨ 改善後のES</h4>
+                                    <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">{item.reviewResult.improved}</p>
+                                  </div>
+                                )}
+                                {item.reviewResult.advice && (
+                                  <div className="bg-brand-50 rounded-lg p-4">
+                                    <h4 className="text-xs font-bold text-brand-700 mb-1">💡 改善アドバイス</h4>
+                                    <p className="text-sm text-gray-700 whitespace-pre-wrap">{item.reviewResult.advice}</p>
+                                  </div>
+                                )}
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
                     )}
                   </div>
-                )}
+                ))}
               </>
             )}
           </div>
