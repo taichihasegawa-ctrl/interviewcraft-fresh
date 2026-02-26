@@ -60,7 +60,7 @@ interface InterviewData {
 const INDUSTRIES = ['メーカー', 'IT・通信', '金融', '商社', 'コンサル', '広告・メディア', '不動産', '小売・流通', '食品', '人材', '公務員', 'その他']
 const CAREER_AXES = ['成長環境', '安定性', '社会貢献', 'グローバル', '裁量権', 'ワークライフバランス', '専門性', 'チームワーク']
 const CHAR_LIMITS = [200, 300, 400, 500, 600, 800, 0]
-const CHAT_MAX_TURNS = 20
+const CHAT_MAX_TURNS = 30
 
 const ES_PRESETS: Record<Exclude<ESItemType, 'custom'>, { label: string; icon: string; question: string }> = {
   self_pr: { label: '自己PR', icon: '💪', question: 'あなたの自己PRを教えてください。' },
