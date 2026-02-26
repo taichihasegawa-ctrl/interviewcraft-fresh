@@ -197,10 +197,12 @@ export default function Home() {
     }
   }
 
-  // Chat ref for auto-scroll
-  const chatEndRef = useRef<HTMLDivElement>(null)
+  // Chat ref for auto-scroll (container only, not page)
+  const chatContainerRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    if (chatContainerRef.current) {
+      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight
+    }
   }, [selfAnalysis.chatMessages, isTyping])
 
   async function startChat() {
@@ -496,7 +498,7 @@ export default function Home() {
               <div className="space-y-4">
                 {/* Chat Messages */}
                 <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-                  <div className="h-[420px] overflow-y-auto p-4 space-y-3" id="chat-container">
+                  <div ref={chatContainerRef} className="h-[420px] overflow-y-auto p-4 space-y-3" id="chat-container">
                     {selfAnalysis.chatMessages.map((msg, i) => (
                       <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                         {msg.role === 'assistant' && (
@@ -527,7 +529,6 @@ export default function Home() {
                         </div>
                       </div>
                     )}
-                    <div ref={chatEndRef} />
                   </div>
 
                   {/* Chat Input */}
@@ -536,7 +537,12 @@ export default function Home() {
                       type="text"
                       value={chatInput}
                       onChange={e => setChatInput(e.target.value)}
-                      onKeyDown={e => e.key === 'Enter' && !e.shiftKey && sendChatMessage()}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+                          e.preventDefault()
+                          sendChatMessage()
+                        }
+                      }}
                       placeholder="メッセージを入力..."
                       className="flex-1 border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-brand-300 focus:border-brand-400"
                       disabled={isTyping}
