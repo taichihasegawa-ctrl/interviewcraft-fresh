@@ -1,18 +1,22 @@
 'use client'
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 
 // ============================================================
 // Types
 // ============================================================
 type Step = 1 | 2 | 3 | 4
-type GuideCategory = 'academic' | 'club' | 'parttime' | 'volunteer' | 'daily'
 type ESItemType = 'self_pr' | 'motivation' | 'gakuchika' | 'custom'
 type InterviewStage = 'first' | 'second' | 'final' | 'group'
 type ESReviewMode = 'structure' | 'specificity' | 'company_fit' | 'differentiation' | 'char_optimization'
 
+interface ChatMessage {
+  role: 'user' | 'assistant'
+  content: string
+  timestamp: number
+}
+
 interface SelfAnalysisData {
-  guideAnswers: Record<string, string>
-  freeText: string
+  chatMessages: ChatMessage[]
   result: any | null
 }
 
@@ -52,13 +56,6 @@ interface InterviewData {
 // ============================================================
 // Constants
 // ============================================================
-const GUIDE_QUESTIONS: Record<GuideCategory, { label: string; question: string; strength: string }> = {
-  academic: { label: '学業', question: 'ゼミやレポートで工夫したことはありますか？テーマや取り組み方を教えてください。', strength: '課題解決力・論理的思考' },
-  club: { label: 'サークル・部活', question: 'チームで困難だったことと、どう対処したか教えてください。', strength: '協調性・リーダーシップ' },
-  parttime: { label: 'アルバイト', question: '売上や業務で改善した例はありますか？具体的に教えてください。', strength: '主体性・成果志向' },
-  volunteer: { label: 'ボランティア', question: 'なぜ参加し、何を学びましたか？', strength: '行動力・社会貢献' },
-  daily: { label: '日常のエピソード', question: '最近「これはうまくいった」と感じた体験はありますか？', strength: '主体性・柔軟性' },
-}
 
 const INDUSTRIES = ['メーカー', 'IT・通信', '金融', '商社', 'コンサル', '広告・メディア', '不動産', '小売・流通', '食品', '人材', '公務員', 'その他']
 const CAREER_AXES = ['成長環境', '安定性', '社会貢献', 'グローバル', '裁量権', 'ワークライフバランス', '専門性', 'チームワーク']
@@ -96,9 +93,11 @@ export default function Home() {
 
   // STEP 1 State
   const [selfAnalysis, setSelfAnalysis] = useState<SelfAnalysisData>({
-    guideAnswers: {}, freeText: '', result: null
+    chatMessages: [], result: null
   })
-  const [inputMode, setInputMode] = useState<'guide' | 'free'>('guide')
+  const [chatInput, setChatInput] = useState('')
+  const [chatStarted, setChatStarted] = useState(false)
+  const [isTyping, setIsTyping] = useState(false)
 
   // STEP 2 State
   const [research, setResearch] = useState<ResearchData>({
@@ -123,7 +122,10 @@ export default function Home() {
       const saved = localStorage.getItem('icf_data')
       if (saved) {
         const data = JSON.parse(saved)
-        if (data.selfAnalysis) setSelfAnalysis(data.selfAnalysis)
+        if (data.selfAnalysis) {
+          setSelfAnalysis(data.selfAnalysis)
+          if (data.selfAnalysis.chatMessages?.length > 0) setChatStarted(true)
+        }
         if (data.research) setResearch(data.research)
         if (data.esItems) setEsItems(data.esItems)
         if (data.isPaid) setIsPaid(data.isPaid)
@@ -186,12 +188,91 @@ export default function Home() {
     }
   }
 
-  async function runSelfAnalysis() {
-    const result = await callAPI('/api/self-analysis', {
-      guideAnswers: selfAnalysis.guideAnswers,
-      freeText: selfAnalysis.freeText,
-    }, '自己分析中...')
-    if (result) setSelfAnalysis(prev => ({ ...prev, result }))
+  // Chat ref for auto-scroll
+  const chatEndRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [selfAnalysis.chatMessages, isTyping])
+
+  async function startChat() {
+    setChatStarted(true)
+    setIsTyping(true)
+    try {
+      const res = await fetch('/api/chat-analysis', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: [], mode: 'chat' })
+      })
+      const data = await res.json()
+      if (data.message) {
+        setSelfAnalysis(prev => ({
+          ...prev,
+          chatMessages: [{ role: 'assistant', content: data.message, timestamp: Date.now() }]
+        }))
+      }
+    } catch (err) {
+      console.error(err)
+    } finally {
+      setIsTyping(false)
+    }
+  }
+
+  async function sendChatMessage() {
+    if (!chatInput.trim() || isTyping) return
+    const userMsg: ChatMessage = { role: 'user', content: chatInput.trim(), timestamp: Date.now() }
+    const newMessages = [...selfAnalysis.chatMessages, userMsg]
+    setSelfAnalysis(prev => ({ ...prev, chatMessages: newMessages }))
+    setChatInput('')
+    setIsTyping(true)
+
+    try {
+      const res = await fetch('/api/chat-analysis', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: newMessages.map(m => ({ role: m.role, content: m.content })),
+          mode: 'chat'
+        })
+      })
+      const data = await res.json()
+      if (data.message) {
+        setSelfAnalysis(prev => ({
+          ...prev,
+          chatMessages: [...prev.chatMessages, { role: 'assistant', content: data.message, timestamp: Date.now() }]
+        }))
+      }
+    } catch (err) {
+      console.error(err)
+    } finally {
+      setIsTyping(false)
+    }
+  }
+
+  async function runAnalysis() {
+    if (selfAnalysis.chatMessages.length < 4) {
+      alert('もう少し会話を続けてから分析しましょう！')
+      return
+    }
+    setIsLoading(true)
+    setLoadingMessage('会話内容を分析中...')
+    try {
+      const res = await fetch('/api/chat-analysis', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: selfAnalysis.chatMessages.map(m => ({ role: m.role, content: m.content })),
+          mode: 'analyze'
+        })
+      })
+      const result = await res.json()
+      if (result.error) throw new Error(result.error)
+      setSelfAnalysis(prev => ({ ...prev, result }))
+    } catch (err: any) {
+      alert(`エラー: ${err.message}`)
+    } finally {
+      setIsLoading(false)
+      setLoadingMessage('')
+    }
   }
 
   async function runIndustryResearch() {
@@ -376,63 +457,121 @@ export default function Home() {
           <div className="animate-fadeIn space-y-6">
             <div>
               <h2 className="text-xl font-bold text-gray-800">STEP 1: 自己分析</h2>
-              <p className="text-sm text-gray-500 mt-1">経験を棚卸しして、ガクチカ・自己PRの素材を見つけましょう</p>
+              <p className="text-sm text-gray-500 mt-1">AIアドバイザーと会話しながら、ガクチカ・自己PRの素材を見つけましょう</p>
             </div>
 
-            {/* Input Mode Toggle */}
-            <div className="flex gap-2">
-              <button onClick={() => setInputMode('guide')} className={`px-4 py-2 rounded-lg text-sm font-medium transition ${inputMode === 'guide' ? 'bg-brand-500 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
-                ガイド付き入力（おすすめ）
-              </button>
-              <button onClick={() => setInputMode('free')} className={`px-4 py-2 rounded-lg text-sm font-medium transition ${inputMode === 'free' ? 'bg-brand-500 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
-                フリー入力
-              </button>
-            </div>
-
-            {inputMode === 'guide' ? (
-              <div className="space-y-4">
-                {(Object.entries(GUIDE_QUESTIONS) as [GuideCategory, typeof GUIDE_QUESTIONS[GuideCategory]][]).map(([key, q]) => (
-                  <div key={key} className="bg-white rounded-xl border border-gray-200 p-5">
-                    <div className="flex items-center justify-between mb-2">
-                      <h3 className="text-sm font-bold text-gray-700">{q.label}</h3>
-                      <span className="text-xs text-accent-600 bg-accent-50 px-2 py-0.5 rounded-full">{q.strength}</span>
-                    </div>
-                    <p className="text-sm text-gray-500 mb-3">{q.question}</p>
-                    <textarea
-                      value={selfAnalysis.guideAnswers[key] || ''}
-                      onChange={e => setSelfAnalysis(prev => ({ ...prev, guideAnswers: { ...prev.guideAnswers, [key]: e.target.value } }))}
-                      placeholder="具体的に書いてみてください（空欄でもOK）"
-                      className="w-full border border-gray-200 rounded-lg p-3 text-sm resize-none focus:ring-2 focus:ring-brand-300 focus:border-brand-400"
-                      rows={3}
-                    />
-                  </div>
-                ))}
+            {!chatStarted ? (
+              /* Start Screen */
+              <div className="bg-white rounded-xl border border-gray-200 p-8 text-center space-y-4">
+                <div className="text-5xl">🤖</div>
+                <h3 className="text-lg font-bold text-gray-800">AIキャリアアドバイザーと話そう</h3>
+                <p className="text-sm text-gray-500 max-w-md mx-auto">
+                  チャット形式で質問に答えるだけで、あなたの強みやガクチカの素材が見つかります。
+                  気軽に話してみてください！
+                </p>
+                <div className="flex flex-wrap justify-center gap-2 text-xs text-gray-400">
+                  <span className="bg-gray-50 px-3 py-1 rounded-full">学業・ゼミ</span>
+                  <span className="bg-gray-50 px-3 py-1 rounded-full">サークル</span>
+                  <span className="bg-gray-50 px-3 py-1 rounded-full">アルバイト</span>
+                  <span className="bg-gray-50 px-3 py-1 rounded-full">趣味・日常</span>
+                </div>
+                <button
+                  onClick={startChat}
+                  className="px-8 py-3 bg-brand-500 text-white font-medium rounded-xl hover:bg-brand-600 transition text-sm"
+                >
+                  💬 会話をはじめる
+                </button>
               </div>
             ) : (
-              <div className="bg-white rounded-xl border border-gray-200 p-5">
-                <p className="text-sm text-gray-500 mb-3">学業、サークル、アルバイト、趣味など、自分の経験を自由に書いてください。</p>
-                <textarea
-                  value={selfAnalysis.freeText}
-                  onChange={e => setSelfAnalysis(prev => ({ ...prev, freeText: e.target.value }))}
-                  placeholder="例: 大学では経済学のゼミでマーケティングを研究。飲食店のアルバイトでは新人教育を担当し..."
-                  className="w-full border border-gray-200 rounded-lg p-3 text-sm resize-none focus:ring-2 focus:ring-brand-300 focus:border-brand-400"
-                  rows={10}
-                />
+              /* Chat Interface */
+              <div className="space-y-4">
+                {/* Chat Messages */}
+                <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                  <div className="h-[420px] overflow-y-auto p-4 space-y-3" id="chat-container">
+                    {selfAnalysis.chatMessages.map((msg, i) => (
+                      <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                        {msg.role === 'assistant' && (
+                          <div className="w-8 h-8 rounded-full bg-brand-100 flex items-center justify-center text-sm mr-2 flex-shrink-0 mt-1">
+                            🤖
+                          </div>
+                        )}
+                        <div className={`max-w-[75%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
+                          msg.role === 'user'
+                            ? 'bg-brand-500 text-white rounded-br-md'
+                            : 'bg-gray-100 text-gray-700 rounded-bl-md'
+                        }`}>
+                          <p className="whitespace-pre-wrap">{msg.content}</p>
+                        </div>
+                      </div>
+                    ))}
+                    {isTyping && (
+                      <div className="flex justify-start">
+                        <div className="w-8 h-8 rounded-full bg-brand-100 flex items-center justify-center text-sm mr-2 flex-shrink-0">
+                          🤖
+                        </div>
+                        <div className="bg-gray-100 rounded-2xl rounded-bl-md px-4 py-3">
+                          <div className="flex gap-1">
+                            <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></span>
+                            <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></span>
+                            <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                    <div ref={chatEndRef} />
+                  </div>
+
+                  {/* Chat Input */}
+                  <div className="border-t border-gray-100 p-3 flex gap-2">
+                    <input
+                      type="text"
+                      value={chatInput}
+                      onChange={e => setChatInput(e.target.value)}
+                      onKeyDown={e => e.key === 'Enter' && !e.shiftKey && sendChatMessage()}
+                      placeholder="メッセージを入力..."
+                      className="flex-1 border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-brand-300 focus:border-brand-400"
+                      disabled={isTyping}
+                    />
+                    <button
+                      onClick={sendChatMessage}
+                      disabled={!chatInput.trim() || isTyping}
+                      className="px-4 py-2.5 bg-brand-500 text-white rounded-xl hover:bg-brand-600 transition disabled:opacity-40 text-sm font-medium"
+                    >
+                      送信
+                    </button>
+                  </div>
+                </div>
+
+                {/* Progress & Analyze */}
+                <div className="flex items-center justify-between">
+                  <div className="text-xs text-gray-400">
+                    💬 {selfAnalysis.chatMessages.filter(m => m.role === 'user').length} 回やりとり
+                    {selfAnalysis.chatMessages.filter(m => m.role === 'user').length >= 3 && (
+                      <span className="text-accent-600 ml-2">✓ 分析できます</span>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => { setChatStarted(false); setSelfAnalysis({ chatMessages: [], result: null }) }}
+                    className="text-xs text-gray-400 hover:text-red-500 transition"
+                  >
+                    リセット
+                  </button>
+                </div>
+
+                <button
+                  onClick={runAnalysis}
+                  disabled={isLoading || selfAnalysis.chatMessages.filter(m => m.role === 'user').length < 3}
+                  className="w-full py-3 bg-accent-500 text-white font-medium rounded-xl hover:bg-accent-600 transition disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  ✨ 会話内容から自己分析する
+                </button>
               </div>
             )}
-
-            <button
-              onClick={runSelfAnalysis}
-              disabled={isLoading || (!Object.values(selfAnalysis.guideAnswers).some(v => v.trim()) && !selfAnalysis.freeText.trim())}
-              className="w-full py-3 bg-brand-500 text-white font-medium rounded-xl hover:bg-brand-600 transition disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              ✨ AIで自己分析を実行
-            </button>
 
             {/* Results */}
             {selfAnalysis.result && (
               <div className="animate-fadeIn space-y-4">
-                <h3 className="text-lg font-bold text-gray-800 border-b border-gray-200 pb-2">分析結果</h3>
+                <h3 className="text-lg font-bold text-gray-800 border-b border-gray-200 pb-2">📊 分析結果</h3>
 
                 {selfAnalysis.result.gakuchikaCandiates && selfAnalysis.result.gakuchikaCandiates.map((g: any, i: number) => (
                   <div key={i} className="bg-white rounded-xl border border-gray-200 p-5">
@@ -451,14 +590,14 @@ export default function Home() {
 
                 {selfAnalysis.result.selfPR && (
                   <div className="bg-brand-50 rounded-xl border border-brand-200 p-5">
-                    <h4 className="font-bold text-brand-700 mb-2">自己PR素案</h4>
+                    <h4 className="font-bold text-brand-700 mb-2">💪 自己PR素案</h4>
                     <p className="text-sm text-gray-700 whitespace-pre-wrap">{selfAnalysis.result.selfPR}</p>
                   </div>
                 )}
 
                 {selfAnalysis.result.values && (
                   <div className="bg-accent-50 rounded-xl border border-accent-200 p-5">
-                    <h4 className="font-bold text-accent-700 mb-2">あなたの強み・価値観</h4>
+                    <h4 className="font-bold text-accent-700 mb-2">🏷️ あなたの強み・価値観</h4>
                     <div className="flex flex-wrap gap-2">
                       {selfAnalysis.result.values.map((v: string, i: number) => (
                         <span key={i} className="text-sm bg-white border border-accent-200 text-accent-700 px-3 py-1 rounded-full">{v}</span>
@@ -466,6 +605,16 @@ export default function Home() {
                     </div>
                   </div>
                 )}
+
+                <div className="bg-gray-50 rounded-xl border border-gray-200 p-4 text-center">
+                  <p className="text-sm text-gray-600">この結果は <strong>STEP 3: ES作成</strong> で自動的に使われます 🔗</p>
+                  <button
+                    onClick={() => isPaid ? setCurrentStep(3) : setCurrentStep(2)}
+                    className="mt-2 px-6 py-2 bg-brand-500 text-white text-sm font-medium rounded-lg hover:bg-brand-600 transition"
+                  >
+                    {isPaid ? 'STEP 3: ES作成へ →' : 'STEP 2: 業界研究へ →'}
+                  </button>
+                </div>
               </div>
             )}
           </div>
