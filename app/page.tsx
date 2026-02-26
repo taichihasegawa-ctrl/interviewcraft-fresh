@@ -60,6 +60,7 @@ interface InterviewData {
 const INDUSTRIES = ['メーカー', 'IT・通信', '金融', '商社', 'コンサル', '広告・メディア', '不動産', '小売・流通', '食品', '人材', '公務員', 'その他']
 const CAREER_AXES = ['成長環境', '安定性', '社会貢献', 'グローバル', '裁量権', 'ワークライフバランス', '専門性', 'チームワーク']
 const CHAR_LIMITS = [200, 300, 400, 500, 600, 800, 0]
+const CHAT_MAX_TURNS = 20
 
 const ES_PRESETS: Record<Exclude<ESItemType, 'custom'>, { label: string; icon: string; question: string }> = {
   self_pr: { label: '自己PR', icon: '💪', question: 'あなたの自己PRを教えてください。' },
@@ -229,7 +230,8 @@ export default function Home() {
   }
 
   async function sendChatMessage() {
-    if (!chatInput.trim() || isTyping) return
+    const userTurns = selfAnalysis.chatMessages.filter(m => m.role === 'user').length
+    if (!chatInput.trim() || isTyping || userTurns >= CHAT_MAX_TURNS) return
     const userMsg: ChatMessage = { role: 'user', content: chatInput.trim(), timestamp: Date.now() }
     const newMessages = [...selfAnalysis.chatMessages, userMsg]
     setSelfAnalysis(prev => ({ ...prev, chatMessages: newMessages }))
@@ -543,13 +545,13 @@ export default function Home() {
                           sendChatMessage()
                         }
                       }}
-                      placeholder="メッセージを入力..."
-                      className="flex-1 border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-brand-300 focus:border-brand-400"
-                      disabled={isTyping}
+                      placeholder={selfAnalysis.chatMessages.filter(m => m.role === 'user').length >= CHAT_MAX_TURNS ? '上限に達しました' : 'メッセージを入力...'}
+                      className="flex-1 border border-gray-200 rounded-xl px-4 py-2.5 text-base focus:ring-2 focus:ring-brand-300 focus:border-brand-400"
+                      disabled={isTyping || selfAnalysis.chatMessages.filter(m => m.role === 'user').length >= CHAT_MAX_TURNS}
                     />
                     <button
                       onClick={sendChatMessage}
-                      disabled={!chatInput.trim() || isTyping}
+                      disabled={!chatInput.trim() || isTyping || selfAnalysis.chatMessages.filter(m => m.role === 'user').length >= CHAT_MAX_TURNS}
                       className="px-4 py-2.5 bg-brand-500 text-white rounded-xl hover:bg-brand-600 transition disabled:opacity-40 text-sm font-medium"
                     >
                       送信
@@ -560,10 +562,12 @@ export default function Home() {
                 {/* Progress & Analyze */}
                 <div className="flex items-center justify-between">
                   <div className="text-xs text-gray-400">
-                    💬 {selfAnalysis.chatMessages.filter(m => m.role === 'user').length} 回やりとり
-                    {selfAnalysis.chatMessages.filter(m => m.role === 'user').length >= 3 && (
+                    💬 {selfAnalysis.chatMessages.filter(m => m.role === 'user').length} / {CHAT_MAX_TURNS} 回
+                    {selfAnalysis.chatMessages.filter(m => m.role === 'user').length >= CHAT_MAX_TURNS ? (
+                      <span className="text-orange-500 ml-2">上限に達しました — 分析してください</span>
+                    ) : selfAnalysis.chatMessages.filter(m => m.role === 'user').length >= 3 ? (
                       <span className="text-accent-600 ml-2">✓ 分析できます</span>
-                    )}
+                    ) : null}
                   </div>
                   <button
                     onClick={() => { setChatStarted(false); setSelfAnalysis({ chatMessages: [], result: null }) }}
