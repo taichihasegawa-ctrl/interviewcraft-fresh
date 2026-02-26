@@ -117,6 +117,8 @@ export default function Home() {
   })
   const [showAnswer, setShowAnswer] = useState(false)
 
+  const [stripePaid, setStripePaid] = useState(false)
+
   // Load from localStorage
   useEffect(() => {
     try {
@@ -124,21 +126,21 @@ export default function Home() {
       if (saved) {
         const data = JSON.parse(saved)
         if (data.selfAnalysis) {
-          // Migrate old format (guideAnswers/freeText) to new format (chatMessages)
           if (data.selfAnalysis.chatMessages) {
             setSelfAnalysis(data.selfAnalysis)
             if (data.selfAnalysis.chatMessages.length > 0) setChatStarted(true)
           } else {
-            // Old format - keep result if exists, reset chat
             setSelfAnalysis({ chatMessages: [], result: data.selfAnalysis.result || null })
           }
         }
         if (data.research) setResearch(data.research)
         if (data.esItems) setEsItems(data.esItems)
-        if (data.isPaid) setIsPaid(data.isPaid)
+        if (data.stripePaid) {
+          setStripePaid(true)
+          setIsPaid(true)
+        }
       }
     } catch {
-      // Corrupted data - clear it
       localStorage.removeItem('icf_data')
     }
   }, [])
@@ -146,25 +148,44 @@ export default function Home() {
   // Save to localStorage
   const saveData = useCallback(() => {
     try {
-      localStorage.setItem('icf_data', JSON.stringify({ selfAnalysis, research, esItems, isPaid }))
+      localStorage.setItem('icf_data', JSON.stringify({ selfAnalysis, research, esItems, stripePaid }))
     } catch {}
-  }, [selfAnalysis, research, esItems, isPaid])
+  }, [selfAnalysis, research, esItems, stripePaid])
 
   useEffect(() => { saveData() }, [saveData])
 
-  // Check payment from URL + trial link
+  // Check payment from URL + trial link (re-verify every time)
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
+
+    // Stripe決済完了
     if (params.get('paid') === 'true') {
       setIsPaid(true)
+      setStripePaid(true)
       window.history.replaceState({}, '', window.location.pathname)
     }
-    const trial = params.get('trial')
+
+    // Trial: URLから取得 or localStorageに保存されたトークン
+    const trial = params.get('trial') || localStorage.getItem('icf_trial')
     if (trial) {
-      const [expiry, key] = trial.split('_')
-      if (new Date(expiry) > new Date() && key === 'FRESH2026') {
-        setIsPaid(true)
-      }
+      // トークンを保存（次回アクセス時にも再検証できるよう）
+      localStorage.setItem('icf_trial', trial)
+      fetch('/api/verify-trial', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ trial })
+      })
+        .then(res => res.json())
+        .then(data => {
+          if (data.valid) {
+            setIsPaid(true)
+          } else {
+            // 期限切れ → トークン削除、ロック
+            localStorage.removeItem('icf_trial')
+            setIsPaid(prev => stripePaid ? prev : false)
+          }
+        })
+        .catch(() => {})
     }
   }, [])
 
