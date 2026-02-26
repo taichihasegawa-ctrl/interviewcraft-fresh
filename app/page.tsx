@@ -134,12 +134,19 @@ export default function Home() {
 
   useEffect(() => { saveData() }, [saveData])
 
-  // Check payment from URL
+  // Check payment from URL + trial link
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     if (params.get('paid') === 'true') {
       setIsPaid(true)
       window.history.replaceState({}, '', window.location.pathname)
+    }
+    const trial = params.get('trial')
+    if (trial) {
+      const [expiry, key] = trial.split('_')
+      if (new Date(expiry) > new Date() && key === 'FRESH2026') {
+        setIsPaid(true)
+      }
     }
   }, [])
 
