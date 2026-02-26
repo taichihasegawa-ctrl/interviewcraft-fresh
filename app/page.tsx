@@ -123,14 +123,23 @@ export default function Home() {
       if (saved) {
         const data = JSON.parse(saved)
         if (data.selfAnalysis) {
-          setSelfAnalysis(data.selfAnalysis)
-          if (data.selfAnalysis.chatMessages?.length > 0) setChatStarted(true)
+          // Migrate old format (guideAnswers/freeText) to new format (chatMessages)
+          if (data.selfAnalysis.chatMessages) {
+            setSelfAnalysis(data.selfAnalysis)
+            if (data.selfAnalysis.chatMessages.length > 0) setChatStarted(true)
+          } else {
+            // Old format - keep result if exists, reset chat
+            setSelfAnalysis({ chatMessages: [], result: data.selfAnalysis.result || null })
+          }
         }
         if (data.research) setResearch(data.research)
         if (data.esItems) setEsItems(data.esItems)
         if (data.isPaid) setIsPaid(data.isPaid)
       }
-    } catch {}
+    } catch {
+      // Corrupted data - clear it
+      localStorage.removeItem('icf_data')
+    }
   }, [])
 
   // Save to localStorage
