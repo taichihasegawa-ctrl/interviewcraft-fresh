@@ -99,6 +99,7 @@ export default function Home() {
   const [chatInput, setChatInput] = useState('')
   const [chatStarted, setChatStarted] = useState(false)
   const [isTyping, setIsTyping] = useState(false)
+  const [isComposing, setIsComposing] = useState(false)
 
   // STEP 2 State
   const [research, setResearch] = useState<ResearchData>({
@@ -560,8 +561,10 @@ export default function Home() {
                       type="text"
                       value={chatInput}
                       onChange={e => setChatInput(e.target.value)}
+                      onCompositionStart={() => setIsComposing(true)}
+                      onCompositionEnd={() => setIsComposing(false)}
                       onKeyDown={e => {
-                        if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+                        if (e.key === 'Enter' && !e.shiftKey && !isComposing) {
                           e.preventDefault()
                           sendChatMessage()
                         }
