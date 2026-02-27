@@ -477,7 +477,7 @@ export default function Home() {
       {isLoading && (
         <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center">
           <div className="bg-white rounded-2xl p-8 shadow-xl text-center max-w-xs">
-            <div className="animate-pulse-soft text-4xl mb-4">🤖</div>
+            <div className="animate-pulse-soft text-4xl mb-4">👨‍💼</div>
             <p className="text-sm font-medium text-gray-700">{loadingMessage}</p>
             <p className="text-xs text-gray-400 mt-2">30秒〜1分ほどお待ちください</p>
           </div>
@@ -492,17 +492,16 @@ export default function Home() {
           <div className="animate-fadeIn space-y-6">
             <div>
               <h2 className="text-xl font-bold text-gray-800">STEP 1: 自己分析</h2>
-              <p className="text-sm text-gray-500 mt-1">AIアドバイザーと会話しながら、ガクチカ・自己PRの素材を見つけましょう</p>
+              <p className="text-sm text-gray-500 mt-1">元採用担当の就活コーチと会話しながら、ガクチカ・自己PRの素材を見つけましょう</p>
             </div>
 
             {!chatStarted ? (
               /* Start Screen */
               <div className="bg-white rounded-xl border border-gray-200 p-8 text-center space-y-4">
-                <div className="text-5xl">🤖</div>
-                <h3 className="text-lg font-bold text-gray-800">AIキャリアアドバイザーと話そう</h3>
+                <div className="text-5xl">👋</div>
+                <h3 className="text-lg font-bold text-gray-800">就活コーチのユウキです！</h3>
                 <p className="text-sm text-gray-500 max-w-md mx-auto">
-                  チャット形式で質問に答えるだけで、あなたの強みやガクチカの素材が見つかります。
-                  気軽に話してみてください！
+                  元大手メーカー採用担当。ES 10,000枚以上を見てきた経験から、あなたの「使える素材」を一緒に見つけます。気軽に話してみてください！
                 </p>
                 <div className="flex flex-wrap justify-center gap-2 text-xs text-gray-400">
                   <span className="bg-gray-50 px-3 py-1 rounded-full">学業・ゼミ</span>
@@ -514,7 +513,7 @@ export default function Home() {
                   onClick={startChat}
                   className="px-8 py-3 bg-brand-500 text-white font-medium rounded-xl hover:bg-brand-600 transition text-sm"
                 >
-                  💬 会話をはじめる
+                  💬 ユウキさんと話してみる
                 </button>
               </div>
             ) : (
@@ -527,7 +526,7 @@ export default function Home() {
                       <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                         {msg.role === 'assistant' && (
                           <div className="w-8 h-8 rounded-full bg-brand-100 flex items-center justify-center text-sm mr-2 flex-shrink-0 mt-1">
-                            🤖
+                            👨‍💼
                           </div>
                         )}
                         <div className={`max-w-[75%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
@@ -542,7 +541,7 @@ export default function Home() {
                     {isTyping && (
                       <div className="flex justify-start">
                         <div className="w-8 h-8 rounded-full bg-brand-100 flex items-center justify-center text-sm mr-2 flex-shrink-0">
-                          🤖
+                          👨‍💼
                         </div>
                         <div className="bg-gray-100 rounded-2xl rounded-bl-md px-4 py-3">
                           <div className="flex gap-1">
