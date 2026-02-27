@@ -563,7 +563,7 @@ export default function Home() {
                       onCompositionStart={() => setIsComposing(true)}
                       onCompositionEnd={() => setIsComposing(false)}
                       onKeyDown={e => {
-                        if (e.key === 'Enter' && !e.shiftKey && !isComposing) {
+                        if (e.key === 'Enter' && !e.shiftKey && !isComposing && e.keyCode !== 229) {
                           e.preventDefault()
                           sendChatMessage()
                         }
