@@ -368,6 +368,7 @@ export default function Home() {
       selfAnalysisData: selfAnalysis.result,
       companyData: research.companyResult,
       selectedGakuchika: item.selectedGakuchika,
+      esType: item.type,
     }, `${item.title} 作成中...`)
     if (result) updateESItem(item.id, { createResult: result })
   }
@@ -648,6 +649,26 @@ export default function Home() {
                   </div>
                 )}
 
+                {selfAnalysis.result.selfInsights && (
+                  <div className="bg-white rounded-xl border border-gray-200 p-5">
+                    <h4 className="font-bold text-gray-700 mb-3">🔍 自己PR素材</h4>
+                    <div className="space-y-2 text-sm">
+                      {selfAnalysis.result.selfInsights.othersView && (
+                        <div><span className="text-gray-400 text-xs">周囲の評価:</span> <span className="text-gray-700">{selfAnalysis.result.selfInsights.othersView}</span></div>
+                      )}
+                      {selfAnalysis.result.selfInsights.selfStrength && (
+                        <div><span className="text-gray-400 text-xs">自覚する強み:</span> <span className="text-gray-700">{selfAnalysis.result.selfInsights.selfStrength}</span></div>
+                      )}
+                      {selfAnalysis.result.selfInsights.teamRole && (
+                        <div><span className="text-gray-400 text-xs">チームでの役割:</span> <span className="text-gray-700">{selfAnalysis.result.selfInsights.teamRole}</span></div>
+                      )}
+                      {selfAnalysis.result.selfInsights.workValues && (
+                        <div><span className="text-gray-400 text-xs">仕事の価値観:</span> <span className="text-gray-700">{selfAnalysis.result.selfInsights.workValues}</span></div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 <div className="bg-gray-50 rounded-xl border border-gray-200 p-4 text-center">
                   <p className="text-sm text-gray-600">この結果は <strong>STEP 3: ES作成</strong> で自動的に使われます 🔗</p>
                   <button
@@ -921,10 +942,10 @@ export default function Home() {
                           )}
                         </div>
 
-                        {/* Gakuchika Selection (for gakuchika type) */}
-                        {item.type === 'gakuchika' && selfAnalysis.result?.gakuchikaCandiates && (
+                        {/* Material Selection (for all types) */}
+                        {selfAnalysis.result?.gakuchikaCandiates && (
                           <div>
-                            <label className="text-xs font-bold text-gray-600">使うガクチカ候補</label>
+                            <label className="text-xs font-bold text-gray-600">使う素材（エピソード）</label>
                             <div className="flex flex-wrap gap-2 mt-1">
                               {selfAnalysis.result.gakuchikaCandiates.map((g: any, i: number) => (
                                 <button
@@ -934,6 +955,18 @@ export default function Home() {
                                 >
                                   {g.title}
                                 </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Strengths/Values display (for self_pr type) */}
+                        {item.type === 'self_pr' && selfAnalysis.result?.values && (
+                          <div>
+                            <label className="text-xs font-bold text-gray-600">活用される強み・価値観</label>
+                            <div className="flex flex-wrap gap-1 mt-1">
+                              {selfAnalysis.result.values.map((v: string, i: number) => (
+                                <span key={i} className="text-xs bg-accent-50 text-accent-700 px-2 py-0.5 rounded-full">{v}</span>
                               ))}
                             </div>
                           </div>
