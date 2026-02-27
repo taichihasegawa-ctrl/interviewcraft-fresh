@@ -9,8 +9,21 @@ export const viewport: Viewport = {
 }
 
 export const metadata: Metadata = {
-  title: 'InterviewCraft 新卒版 | AI就活対策サービス',
-  description: '文系大学生向けAI就活対策。自己分析・ES添削・面接対策をAIがサポート。',
+  title: 'InterviewCraft Fresh | 話すだけでES・面接対策が完成する',
+  description: '元採用担当AIコーチが、あなたの強みを引き出します。自己分析・ES作成・面接対策をAIがサポート。',
+  openGraph: {
+    title: '話すだけでES・面接対策が完成する | InterviewCraft Fresh',
+    description: '元採用担当AIコーチが、あなたの強みを引き出します。自己分析・ES作成・面接対策をAIがサポート。',
+    images: [{ url: '/ogp.png', width: 1200, height: 630 }],
+    type: 'website',
+    siteName: 'InterviewCraft Fresh',
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: '話すだけでES・面接対策が完成する',
+    description: '元採用担当AIコーチが、あなたの強みを引き出します。',
+    images: ['/ogp.png'],
+  },
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
