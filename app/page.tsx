@@ -245,7 +245,10 @@ export default function Home() {
         }))
       }
     } catch (err) {
-      console.error(err)
+      setSelfAnalysis(prev => ({
+        ...prev,
+        chatMessages: [{ role: 'assistant', content: '⚠️ 通信エラーが発生しました。もう一度お試しください。', timestamp: Date.now() }]
+      }))
     } finally {
       setIsTyping(false)
     }
@@ -277,7 +280,10 @@ export default function Home() {
         }))
       }
     } catch (err) {
-      console.error(err)
+      setSelfAnalysis(prev => ({
+        ...prev,
+        chatMessages: [...prev.chatMessages, { role: 'assistant', content: '⚠️ 送信に失敗しました。もう一度お試しください。', timestamp: Date.now() }]
+      }))
     } finally {
       setIsTyping(false)
     }
@@ -1003,11 +1009,31 @@ export default function Home() {
                                 <div className="bg-gray-50 rounded-lg p-4">
                                   <div className="flex items-center justify-between mb-2">
                                     <h4 className="text-sm font-bold text-gray-700">生成されたES</h4>
-                                    {item.createResult.charCount && (
-                                      <span className="text-xs text-gray-500">{item.createResult.charCount}字</span>
-                                    )}
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-xs text-gray-500">{item.createResult.es?.length || 0}字</span>
+                                      <button
+                                        onClick={() => { navigator.clipboard.writeText(item.createResult.es || '') }}
+                                        className="text-xs text-brand-600 hover:text-brand-800 transition"
+                                      >
+                                        📋 コピー
+                                      </button>
+                                    </div>
                                   </div>
-                                  <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">{item.createResult.es}</p>
+                                  <textarea
+                                    value={item.createResult.es || ''}
+                                    onChange={e => updateESItem(item.id, { createResult: { ...item.createResult, es: e.target.value } })}
+                                    className="w-full border border-gray-200 rounded-lg p-3 text-sm leading-relaxed resize-none focus:ring-2 focus:ring-brand-300 bg-white"
+                                    rows={8}
+                                  />
+                                  <div className="flex items-center justify-between mt-1">
+                                    <p className="text-xs text-gray-400">✏️ 自由に編集できます</p>
+                                    <button
+                                      onClick={() => updateESItem(item.id, { reviewText: item.createResult.es || '', mode: 'review' })}
+                                      className="text-xs text-accent-600 hover:text-accent-800 transition font-medium"
+                                    >
+                                      → 添削に送る
+                                    </button>
+                                  </div>
                                 </div>
                                 {item.createResult.explanation && (
                                   <div className="bg-brand-50 rounded-lg p-4">
