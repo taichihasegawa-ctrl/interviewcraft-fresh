@@ -21,7 +21,6 @@ interface SelfAnalysisData {
 }
 
 interface ResearchData {
-  industries: string[]
   companyName: string
   careerAxis: string[]
   industryResult: any | null
@@ -57,7 +56,6 @@ interface InterviewData {
 // Constants
 // ============================================================
 
-const INDUSTRIES = ['メーカー', 'IT・通信', '金融', '商社', 'コンサル', '広告・メディア', '不動産', '小売・流通', '食品', '人材', '公務員', 'その他']
 const CAREER_AXES = ['成長環境', '安定性', '社会貢献', 'グローバル', '裁量権', 'ワークライフバランス', '専門性', 'チームワーク']
 const CHAR_LIMITS = [200, 300, 400, 500, 600, 800, 0]
 const CHAT_MAX_TURNS = 30
@@ -103,7 +101,7 @@ export default function Home() {
 
   // STEP 2 State
   const [research, setResearch] = useState<ResearchData>({
-    industries: [], companyName: '', careerAxis: [], industryResult: null, companyResult: null
+    companyName: '', careerAxis: [], industryResult: null, companyResult: null
   })
 
   // STEP 3 State
@@ -318,18 +316,22 @@ export default function Home() {
 
   async function runIndustryResearch() {
     const result = await callAPI('/api/industry-research', {
-      industries: research.industries,
+      selfAnalysisData: selfAnalysis.result,
+      chatLog: selfAnalysis.chatMessages.map(m => ({ role: m.role, content: m.content })),
       careerAxis: research.careerAxis,
-    }, '業界分析中...')
+    }, 'あなたに合う業界・企業を分析中...')
     if (result) setResearch(prev => ({ ...prev, industryResult: result }))
   }
 
-  async function runCompanyAnalysis() {
+  async function runCompanyAnalysis(companyNameOverride?: string) {
+    const name = companyNameOverride || research.companyName
+    if (!name.trim()) return
+    if (companyNameOverride) setResearch(prev => ({ ...prev, companyName: name }))
     const result = await callAPI('/api/company-analysis', {
-      companyName: research.companyName,
+      companyName: name,
       selfAnalysisData: selfAnalysis.result,
       careerAxis: research.careerAxis,
-    }, '企業分析中...')
+    }, `${name} を分析中...`)
     if (result) setResearch(prev => ({ ...prev, companyResult: result }))
   }
 
@@ -454,7 +456,7 @@ export default function Home() {
         <div className="max-w-5xl mx-auto px-4 py-3">
           <div className="flex items-center gap-1 sm:gap-2">
             {([1, 2, 3, 4] as Step[]).map(s => {
-              const labels = ['自己分析', '業界・企業', 'ES作成', '面接対策']
+              const labels = ['自己分析', 'おすすめ企業', 'ES作成', '面接対策']
               const icons = ['🔍', '🏭', '✍️', '🎤']
               const completed = stepCompleted(s)
               const active = currentStep === s
@@ -698,32 +700,27 @@ export default function Home() {
             ) : (
               <>
                 <div>
-                  <h2 className="text-xl font-bold text-gray-800">STEP 2: 業界・企業研究</h2>
-                  <p className="text-sm text-gray-500 mt-1">興味のある業界と企業を分析して、志望動機の素材を見つけましょう</p>
+                  <h2 className="text-xl font-bold text-gray-800">STEP 2: あなたに合う業界・企業</h2>
+                  <p className="text-sm text-gray-500 mt-1">自己分析の結果から、あなたの強みが活きる業界と企業を提案します</p>
                 </div>
 
-                {/* Industry Selection */}
-                <div className="bg-white rounded-xl border border-gray-200 p-5">
-                  <h3 className="text-sm font-bold text-gray-700 mb-3">興味のある業界（複数選択可）</h3>
-                  <div className="flex flex-wrap gap-2">
-                    {INDUSTRIES.map(ind => (
-                      <button
-                        key={ind}
-                        onClick={() => setResearch(prev => ({
-                          ...prev,
-                          industries: prev.industries.includes(ind) ? prev.industries.filter(i => i !== ind) : [...prev.industries, ind]
-                        }))}
-                        className={`px-3 py-1.5 rounded-lg text-sm transition ${research.industries.includes(ind) ? 'bg-brand-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
-                      >
-                        {ind}
-                      </button>
-                    ))}
+                {/* STEP 1未完了の警告 */}
+                {!selfAnalysis.result && (
+                  <div className="bg-orange-50 border border-orange-200 rounded-xl p-4">
+                    <p className="text-sm text-orange-700">⚠️ STEP 1の自己分析を先に完了すると、より精度の高い提案ができます</p>
+                    <button
+                      onClick={() => setCurrentStep(1)}
+                      className="mt-2 text-sm text-orange-600 hover:text-orange-800 font-medium"
+                    >
+                      ← STEP 1に戻る
+                    </button>
                   </div>
-                </div>
+                )}
 
                 {/* Career Axis */}
                 <div className="bg-white rounded-xl border border-gray-200 p-5">
-                  <h3 className="text-sm font-bold text-gray-700 mb-3">就活の軸（複数選択可）</h3>
+                  <h3 className="text-sm font-bold text-gray-700 mb-1">就活の軸（任意・複数選択可）</h3>
+                  <p className="text-xs text-gray-400 mb-3">選択すると、軸に合った業界を優先して提案します</p>
                   <div className="flex flex-wrap gap-2">
                     {CAREER_AXES.map(axis => (
                       <button
@@ -742,57 +739,138 @@ export default function Home() {
 
                 <button
                   onClick={runIndustryResearch}
-                  disabled={isLoading || research.industries.length === 0}
+                  disabled={isLoading || !selfAnalysis.result}
                   className="w-full py-3 bg-brand-500 text-white font-medium rounded-xl hover:bg-brand-600 transition disabled:opacity-40 disabled:cursor-not-allowed"
                 >
-                  🏭 業界マップを生成
+                  🎯 おすすめ業界・企業を提案してもらう
                 </button>
 
-                {/* Industry Result */}
+                {/* Recommendations Result */}
                 {research.industryResult && (
-                  <div className="animate-fadeIn bg-white rounded-xl border border-gray-200 p-5 space-y-4">
-                    <h3 className="text-lg font-bold text-gray-800">業界マップ</h3>
-                    {research.industryResult.industries?.map((ind: any, i: number) => (
-                      <div key={i} className="border-l-4 border-brand-400 pl-4">
-                        <h4 className="font-bold text-gray-800">{ind.name}</h4>
-                        <p className="text-sm text-gray-600 mt-1">{ind.overview}</p>
-                        {ind.trend && <p className="text-sm text-brand-600 mt-1">📈 トレンド: {ind.trend}</p>}
-                        {ind.newGradRoles && <p className="text-sm text-accent-600 mt-1">👤 新卒の主な職種: {ind.newGradRoles}</p>}
-                        {ind.desiredTraits && <p className="text-sm text-purple-600 mt-1">⭐ 評価される学生の特徴: {ind.desiredTraits}</p>}
+                  <div className="animate-fadeIn space-y-4">
+                    {/* Summary */}
+                    {research.industryResult.summary && (
+                      <div className="bg-brand-50 rounded-xl border border-brand-200 p-5">
+                        <p className="text-sm text-brand-800 leading-relaxed">{research.industryResult.summary}</p>
+                      </div>
+                    )}
+
+                    {/* Recommended Industries */}
+                    {research.industryResult.recommendations?.map((rec: any, i: number) => (
+                      <div key={i} className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                        <div className="p-5">
+                          <div className="flex items-center justify-between mb-2">
+                            <h3 className="font-bold text-gray-800 text-lg">{rec.industry}</h3>
+                            <div className="flex items-center gap-1">
+                              {[...Array(5)].map((_, s) => (
+                                <div key={s} className={`w-2.5 h-2.5 rounded-full ${s < rec.matchScore ? 'bg-accent-500' : 'bg-gray-200'}`} />
+                              ))}
+                              <span className="text-xs text-gray-400 ml-1">マッチ度</span>
+                            </div>
+                          </div>
+                          <p className="text-sm text-gray-600 leading-relaxed mb-3">{rec.reason}</p>
+                          {rec.roles && (
+                            <p className="text-xs text-brand-600 mb-3">👤 向いている職種: {rec.roles}</p>
+                          )}
+
+                          {/* Companies */}
+                          <div className="space-y-2">
+                            <p className="text-xs font-bold text-gray-500">おすすめ企業:</p>
+                            {rec.companies?.map((c: any, j: number) => (
+                              <div key={j} className="flex items-center justify-between bg-gray-50 rounded-lg p-3">
+                                <div className="flex-1">
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-sm font-medium text-gray-800">{c.name}</span>
+                                    <span className={`text-xs px-1.5 py-0.5 rounded ${c.type === '大手' ? 'bg-blue-100 text-blue-700' : c.type === 'ベンチャー' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>{c.type}</span>
+                                  </div>
+                                  <p className="text-xs text-gray-500 mt-0.5">{c.reason}</p>
+                                </div>
+                                <button
+                                  onClick={() => {
+                                    setResearch(prev => ({ ...prev, companyName: c.name }))
+                                    runCompanyAnalysis(c.name)
+                                  }}
+                                  className="ml-3 text-xs text-brand-600 hover:text-brand-800 font-medium whitespace-nowrap"
+                                >
+                                  詳しく分析 →
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+
+                          {rec.tips && (
+                            <p className="text-xs text-gray-400 mt-3 border-t border-gray-100 pt-2">💡 {rec.tips}</p>
+                          )}
+                        </div>
                       </div>
                     ))}
+
+                    {/* Unexpected Pick */}
+                    {research.industryResult.unexpectedPick && (
+                      <div className="bg-gradient-to-r from-purple-50 to-pink-50 rounded-xl border border-purple-200 p-5">
+                        <h3 className="font-bold text-purple-800 text-lg mb-2">💡 意外なおすすめ: {research.industryResult.unexpectedPick.industry}</h3>
+                        <p className="text-sm text-gray-700 leading-relaxed mb-3">{research.industryResult.unexpectedPick.reason}</p>
+                        <div className="space-y-2">
+                          {research.industryResult.unexpectedPick.companies?.map((c: any, j: number) => (
+                            <div key={j} className="flex items-center justify-between bg-white/60 rounded-lg p-3">
+                              <div>
+                                <span className="text-sm font-medium text-gray-800">{c.name}</span>
+                                <span className={`text-xs px-1.5 py-0.5 rounded ml-2 ${c.type === '大手' ? 'bg-blue-100 text-blue-700' : c.type === 'ベンチャー' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>{c.type}</span>
+                                <p className="text-xs text-gray-500 mt-0.5">{c.reason}</p>
+                              </div>
+                              <button
+                                onClick={() => {
+                                  setResearch(prev => ({ ...prev, companyName: c.name }))
+                                  runCompanyAnalysis(c.name)
+                                }}
+                                className="ml-3 text-xs text-purple-600 hover:text-purple-800 font-medium whitespace-nowrap"
+                              >
+                                詳しく分析 →
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
 
-                {/* Company Analysis */}
+                {/* Company Deep Analysis */}
                 <div className="bg-white rounded-xl border border-gray-200 p-5">
-                  <h3 className="text-sm font-bold text-gray-700 mb-3">志望企業名（任意）</h3>
-                  <input
-                    type="text"
-                    value={research.companyName}
-                    onChange={e => setResearch(prev => ({ ...prev, companyName: e.target.value }))}
-                    placeholder="例: 株式会社〇〇"
-                    className="w-full border border-gray-200 rounded-lg p-3 text-sm focus:ring-2 focus:ring-brand-300 focus:border-brand-400"
-                  />
+                  <h3 className="text-sm font-bold text-gray-700 mb-3">企業を詳しく分析（直接入力も可）</h3>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={research.companyName}
+                      onChange={e => setResearch(prev => ({ ...prev, companyName: e.target.value }))}
+                      placeholder="企業名を入力"
+                      className="flex-1 border border-gray-200 rounded-lg p-3 text-sm focus:ring-2 focus:ring-brand-300 focus:border-brand-400"
+                    />
+                    <button
+                      onClick={() => runCompanyAnalysis()}
+                      disabled={isLoading || !research.companyName.trim()}
+                      className="px-4 py-3 bg-brand-500 text-white text-sm font-medium rounded-lg hover:bg-brand-600 transition disabled:opacity-40"
+                    >
+                      🔍 分析
+                    </button>
+                  </div>
                 </div>
-
-                <button
-                  onClick={runCompanyAnalysis}
-                  disabled={isLoading || !research.companyName.trim()}
-                  className="w-full py-3 bg-brand-500 text-white font-medium rounded-xl hover:bg-brand-600 transition disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  🔍 企業分析レポートを生成
-                </button>
 
                 {/* Company Result */}
                 {research.companyResult && (
                   <div className="animate-fadeIn bg-white rounded-xl border border-gray-200 p-5 space-y-4">
                     <h3 className="text-lg font-bold text-gray-800">{research.companyName} 分析レポート</h3>
+                    {research.companyResult.companyOverview && (
+                      <div><h4 className="text-sm font-bold text-gray-600 mb-1">📋 概要</h4><p className="text-sm text-gray-600">{research.companyResult.companyOverview}</p></div>
+                    )}
                     {research.companyResult.strengths && (
                       <div><h4 className="text-sm font-bold text-accent-600 mb-1">💪 企業の強み</h4><p className="text-sm text-gray-600">{research.companyResult.strengths}</p></div>
                     )}
                     {research.companyResult.challenges && (
                       <div><h4 className="text-sm font-bold text-orange-600 mb-1">⚡ 課題</h4><p className="text-sm text-gray-600">{research.companyResult.challenges}</p></div>
+                    )}
+                    {research.companyResult.competitors && (
+                      <div><h4 className="text-sm font-bold text-gray-600 mb-1">🏢 競合との差別化</h4><p className="text-sm text-gray-600">{research.companyResult.competitors}</p></div>
                     )}
                     {research.companyResult.desiredPerson && (
                       <div><h4 className="text-sm font-bold text-brand-600 mb-1">🎯 求める人物像</h4><p className="text-sm text-gray-600">{research.companyResult.desiredPerson}</p></div>
