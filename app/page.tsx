@@ -375,7 +375,8 @@ export default function Home() {
       companyData: research.companyResult,
       selectedGakuchika: item.selectedGakuchika,
       esType: item.type,
-    }, `${item.title} 作成中...`)
+      chatLog: selfAnalysis.chatMessages.map(m => ({ role: m.role, content: m.content })),
+    }, `${item.title} 作成中...（2段階で生成します）`)
     if (result) updateESItem(item.id, { createResult: result })
   }
 
@@ -1035,12 +1036,34 @@ export default function Home() {
                                     </button>
                                   </div>
                                 </div>
-                                {item.createResult.explanation && (
-                                  <div className="bg-brand-50 rounded-lg p-4">
-                                    <h4 className="text-xs font-bold text-brand-700 mb-1">💡 この構成にした理由</h4>
-                                    <p className="text-sm text-gray-700">{item.createResult.explanation}</p>
-                                  </div>
-                                )}
+
+                                {/* 構成・差別化・改善ヒント */}
+                                <div className="grid grid-cols-1 gap-2">
+                                  {item.createResult.outline && (
+                                    <div className="bg-brand-50 rounded-lg p-3">
+                                      <h4 className="text-xs font-bold text-brand-700 mb-1">📐 構成</h4>
+                                      <p className="text-xs text-gray-600">{item.createResult.outline}</p>
+                                    </div>
+                                  )}
+                                  {item.createResult.differentiator && (
+                                    <div className="bg-accent-50 rounded-lg p-3">
+                                      <h4 className="text-xs font-bold text-accent-700 mb-1">✨ 差別化ポイント</h4>
+                                      <p className="text-xs text-gray-600">{item.createResult.differentiator}</p>
+                                    </div>
+                                  )}
+                                  {item.createResult.keyMaterials && (
+                                    <div className="bg-blue-50 rounded-lg p-3">
+                                      <h4 className="text-xs font-bold text-blue-700 mb-1">🔑 使用した素材</h4>
+                                      <p className="text-xs text-gray-600">{item.createResult.keyMaterials}</p>
+                                    </div>
+                                  )}
+                                  {item.createResult.improvementHints && (
+                                    <div className="bg-orange-50 rounded-lg p-3">
+                                      <h4 className="text-xs font-bold text-orange-700 mb-1">💡 さらに良くするには</h4>
+                                      <p className="text-xs text-gray-600">{item.createResult.improvementHints}</p>
+                                    </div>
+                                  )}
+                                </div>
                               </div>
                             )}
                           </div>
